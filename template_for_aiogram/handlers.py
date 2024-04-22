@@ -4,6 +4,7 @@ from typing import Union, Any
 from aiogram.types import InputFile, InlineKeyboardMarkup, WebAppInfo, LoginUrl, CallbackGame, InlineKeyboardButton, \
     ReplyKeyboardMarkup, KeyboardButtonPollType, KeyboardButton
 
+from classes.message_editor import MeLinkPreview, MePhoto
 from template.dev import *
 from template_for_aiogram.scopes import *
 from template_for_aiogram.types import *
@@ -152,7 +153,7 @@ def heading(tag: Tag) -> Paragraph:
 
         ::
 
-            │ <heading/>
+            │ <heading>
             │     ... NO_HTML Scope ...
             │ <heading/>
             └── MESSAGE/ELEMENT Scope
@@ -180,9 +181,9 @@ def section(tag: Tag) -> Paragraph:
 
         ::
 
-            │ <p/>
+            │ <section>
             │     ... ELEMENT Scope ...
-            │ <p/>
+            │ <section/>
             └── MESSAGE/ELEMENT Scope
 
         Пример использования::
@@ -209,7 +210,7 @@ def p(tag: Tag) -> Paragraph:
 
         ::
 
-            │ <p/>
+            │ <p>
             │     ... ELEMENT Scope ...
             │ <p/>
             └── MESSAGE/ELEMENT Scope
@@ -348,7 +349,7 @@ def a(tag: Tag, *, href: str) -> Text:
     return Text(f'<a href="{href}">{NO_HTML.parse(tag.element, tag.context)}</a>')
 
 
-@register([MESSAGE, ELEMENT])
+@register([MESSAGE, ELEMENT], name=['b', 'strong'])
 def b(tag: Tag) -> Text:
     """
         Жирный шрифт.
@@ -376,7 +377,7 @@ def b(tag: Tag) -> Text:
     return Text(f'<b>{ELEMENT.parse(tag.element, tag.context)}</b>')
 
 
-@register([MESSAGE, ELEMENT])
+@register([MESSAGE, ELEMENT], name=['i', 'em'])
 def i(tag: Tag) -> Text:
     """
         Курсив.
@@ -402,6 +403,62 @@ def i(tag: Tag) -> Text:
 
     """
     return Text(f'<i>{ELEMENT.parse(tag.element, tag.context)}</i>')
+
+
+@register([MESSAGE, ELEMENT])
+def code(tag: Tag) -> Text:
+    """
+        Моноширинный копируемый текст.
+
+        Тип текста: Text
+
+        ::
+
+            │ <code>
+            │     ... NO_HTML Scope ...
+            │ </code>
+            └── MESSAGE/ELEMENT Scope
+
+        Пример использования::
+
+            main.xml
+            │ <message>
+            │     <code> Hello World! </code>
+            │ </message>
+
+            >>> render('main.xml', {})
+            MessageRender('<code>Hello World!</code>')
+
+    """
+    return Text(f'<code>{NO_HTML.parse(tag.element, tag.context)}</code>')
+
+
+@register([MESSAGE, ELEMENT], name=['s', 'strike', 'del'])
+def s(tag: Tag) -> Text:
+    """
+        Зачёркнутый текст.
+
+        Тип текста: Text
+
+        ::
+
+            │ <s>
+            │     ... ELEMENT Scope ...
+            │ </s>
+            └── MESSAGE/ELEMENT Scope
+
+        Пример использования::
+
+            main.xml
+            │ <message>
+            │     <s> Hello World! </s>
+            │ </message>
+
+            >>> render('main.xml', {})
+            MessageRender('<s>Hello World!</s>')
+
+    """
+    return Text(f'<s>{ELEMENT.parse(tag.element, tag.context)}</s>')
 
 
 @register([MESSAGE, ELEMENT])
@@ -433,85 +490,74 @@ def u(tag: Tag) -> Text:
 
 
 @register([MESSAGE, ELEMENT])
-def s(tag: Tag) -> Text:
+def pre(tag: Tag, *, language: str = None) -> Text:
     """
-        Зачёркнутый текст.
+        Неотформатированный текст с подсветкой синтаксиса
 
-        Тип текста: Text
+        Тип текста: Paragraph
 
         ::
 
-            │ <s>
+            │ <pre>
             │     ... ELEMENT Scope ...
-            │ </s>
+            │ </pre>
             └── MESSAGE/ELEMENT Scope
+
+        Аргументы::
+
+            <pre[ language: str]/>
+            language - Язык подсветки синтаксиса.
 
         Пример использования::
 
             main.xml
             │ <message>
-            │     <s> Hello World! </s>
+            │     <pre> Hello <br/>   World! </pre>
             │ </message>
 
             >>> render('main.xml', {})
-            MessageRender('<s>Hello World!</s>')
+            MessageRender(' Hello &lt;br/&gt;   World! ')
 
     """
-    return Text(f'<s>{ELEMENT.parse(tag.element, tag.context)}</s>')
+    result = tag.element.nodeValue.format_map(tag.context)
+    result = result.replace('<', '&lt;').replace('>', '&gt;')
+
+    arg = (
+        '' if language is None
+        else f' language="{language}"'
+    )
+    return Paragraph(f'<pre{arg}>{result}</pre>')
 
 
-@register([MESSAGE, ELEMENT])
-def code(tag: Tag) -> Text:
-    """
-        Моноширинный копируемый текст.
+@register([MESSAGE], name='link-preview')
+def link_preview(_, *, url: str, size_hint: str = None, position: str = None):
+    if size_hint not in ('small', 'large'):
+        raise ParsingError(f'link-preview.size_hint expected value "small" or "large", got "{size_hint}"')
 
-        Тип текста: Text
+    if position not in ('above', 'below'):
+        raise ParsingError(f'link-preview.position expected value "above" or "below", got "{position}"')
 
-        ::
-
-            │ <code>
-            │     ... NO_HTML Scope ...
-            │ </code>
-            └── MESSAGE/ELEMENT Scope
-
-        Пример использования::
-
-            main.xml
-            │ <message>
-            │     <code> Hello World! </code>
-            │ </message>
-
-            >>> render('main.xml', {})
-            MessageRender('<code>Hello World!</code>')
-
-    """
-    return Text(f'<code>{NO_HTML.parse(tag.element, tag.context)}</code>')
+    return MeLinkPreview(url=url, size_hint=size_hint, position=position)
 
 
-@register([MESSAGE])
-def img(_, *, src: str) -> Union[ImageID, ImageFile]:
+@register([MESSAGE], name=['photo', 'img'])
+def photo(_, *, src: str, has_spoiler: bool = False) -> Union[ImageID, ImageFile]:
     """
         Изображение.
 
         ::
 
-            │ <img/>
+            │ <photo/>
             └── MESSAGE Scope
 
         Аргументы::
 
-            <img src: (str|InputFile)/>
+            <photo src: (str|InputFile)/>
             src - InputFile, File-ID или uri-изображения.
 
     """
     # InputFile can be provided via context vars
-    if isinstance(src, InputFile):
-        return ImageFile(src)
-
-    if isinstance(src, str):
-        return ImageID(src)
-
-    raise ParsingError(f'img.src expected "str" or "InputFile", got "{type(src)}"')
+    return MePhoto(photo=src, has_spoiler=has_spoiler)
 
 
 @register([MESSAGE])

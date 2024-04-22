@@ -480,7 +480,7 @@ class ParsingScope:
 
     # Регистрация обработчиков --------------------------------------
 
-    def _register(self, func, name: str = None, override: bool = False,
+    def _register(self, func, name: Union[list[str] | str] = None, override: bool = False,
                   annotations: dict = None, defaults: dict = None):
 
         # Получаем имя тега
@@ -488,8 +488,13 @@ class ParsingScope:
             name = getattr(func, '__name__', None)
         if name is None:
             raise RegistrationError('Cannot extract tag name, provide name explicitly')
-        if name in self.handlers and not override:
-            raise RegistrationError(f'Handler with name "{name}" already registered')
+
+        if isinstance(name, str):
+            name = [name]
+
+        _used_names = set(name).intersection(self.handlers.keys())
+        if isinstance(name, list) and _used_names and not override:
+            raise RegistrationError(f'Handlers with names {_used_names} already registered')
 
         # Получаем аннотации типов
         if not annotations:
@@ -515,10 +520,14 @@ class ParsingScope:
         if unexpected := set(defaults.keys()) - set(annotations.keys()):
             raise RegistrationError(f'You cannot provide defaults to unlisted arguments: {unexpected}')
 
-        self.handlers[name] = self.Handler(func, annotations, defaults, takes_remaining)
+        handler = self.Handler(func, annotations, defaults, takes_remaining)
+
+        for alias in name:
+            self.handlers[alias] = handler
+
         return func
 
-    def register(self, func=None, /, name: str = None, override: bool = False,
+    def register(self, func=None, /, name: Union[list[str] | str] = None, override: bool = False,
                  annotations: dict = None, defaults: dict = None) -> Callable:
         """
         Регистрирует обработчик тега. Данный обработчик будет вызываться для элементов с указанным
@@ -567,7 +576,7 @@ def register_text(parsers: Iterable[ParsingScope]) -> Callable:
     return decorator
 
 
-def register(scopes: Iterable[ParsingScope], name: str = None, override: bool = False,
+def register(scopes: Iterable[ParsingScope], name: Union[list[str] | str] = None, override: bool = False,
              annotations: dict = None, defaults: dict = None) -> Callable:
     """
     Регистрирует обработчик тега. Данный обработчик будет вызываться для элементов с указанным

@@ -19,6 +19,17 @@ class Database  - stores system's state
     </inline-keyboard>
 </message>
 
+
+<message>
+    <album>
+        <image src=""/>
+        <image src=""/>
+        <image src=""/>
+    </album>
+
+    And this is a caption
+</message>
+
 """
 import asyncio
 import contextvars
@@ -29,12 +40,14 @@ from asyncio import Lock
 from functools import partial
 from typing import Optional, ClassVar, Callable, Hashable, Union, Literal, Any
 
-from aiogram import Bot, Dispatcher
+from aiogram import Bot, Dispatcher, F
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters.callback_data import CallbackData
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, MessageEntity, \
-    ReplyParameters, ReplyKeyboardMarkup, ReplyKeyboardRemove, ForceReply, InputFile
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, InputFile, FSInputFile, \
+    InputMediaDocument, InputMediaAudio, InputMediaPhoto
 from pydantic import BaseModel, Field, ConfigDict
+
+import classes.message_editor as me
 
 TOKEN = '6786053401:AAGO9mhXYedvc_JVmVuTedDOkPm5dMfIoCI'
 
@@ -448,77 +461,6 @@ class MessageViewLazyProxy:
 v = MessageViewLazyProxy
 
 
-class MeLinkPreview(BaseModel):
-    url: str
-    size_hint: Literal['small', 'large'] = None
-    position: Literal['above', 'below'] = None
-
-
-class MeDocument(BaseModel):
-    document: Union[InputFile, str]
-    thumbnail: Optional[InputFile] = None
-    disable_content_type_detection: Optional[bool] = None
-
-
-class MeAnimation(BaseModel):
-    animation: Union[InputFile, str]
-    duration: Optional[int] = None
-    width: Optional[int] = None
-    height: Optional[int] = None
-    thumbnail: Optional[InputFile] = None
-    has_spoiler: Optional[bool] = None
-
-
-class MeVideo(BaseModel):
-    video: Union[InputFile, str]
-    duration: Optional[int] = None
-    width: Optional[int] = None
-    height: Optional[int] = None
-    thumbnail: Optional[InputFile] = None
-    has_spoiler: Optional[bool] = None
-    supports_streaming: Optional[bool] = None
-
-
-class MeAudio(BaseModel):
-    audio: Union[InputFile, str]
-    duration: Optional[int] = None
-    performer: Optional[str] = None
-    title: Optional[str] = None
-    thumbnail: Optional[InputFile] = None
-
-
-class MeMessage(BaseModel):
-    media: Union[MeLinkPreview, MeDocument, MeAnimation, MeVideo, MeAudio] = None
-    text: str
-    entities: Optional[list[MessageEntity]]
-    parse_mode: Optional[str]
-    reply_markup: Optional[Union[InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove, ForceReply]] = None
-
-
-class MessageEditor(BaseModel):
-    media_type: Literal['no-media', 'link-preview', 'photo', 'animation', 'video', 'document'] = None
-
-    async def send(
-            self,
-            message: MeMessage,
-            chat_id: Union[int, str],
-            message_thread_id: Optional[int] = None,
-            disable_notification: Optional[bool] = None,
-            protect_content: Optional[bool] = None,
-            reply_parameters: Optional[ReplyParameters] = None
-    ):
-        pass
-
-    async def edit(
-            self,
-            message: MeMessage,
-            chat_id: Optional[Union[int, str]] = None,
-            message_id: Optional[int] = None,
-            inline_message_id: Optional[str] = None
-    ):
-        pass
-
-
 # USAGE EXAMPLE -----
 
 
@@ -567,9 +509,57 @@ async def startup():
     print(MyMessageView(pattern='Counter: {number}', number='0'))
 
 
+editor: me.MessageEditor = None
+
+
 async def my_message_handler(message: Message):
-    view = MyMessageView(pattern='Counter: {number}', number='0')
-    await view.send(message.chat.id)
+    # view = MyMessageView(pattern='Counter: {number}', number='0')
+    # await view.send(message.chat.id)
+    global editor
+
+    editor = me.MessageEditor()
+    await editor.send(
+        message=me.MeMessage(
+            media=me.MeAudio(
+                audio=FSInputFile(path='BBB.mp3', filename='BBB.mp3'),
+                duration=None,
+                performer='world',
+                title='Hello',
+                thumbnail=None
+            ),
+            text='Hello World!',
+            entities=[],
+            parse_mode=None,
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[[
+                    InlineKeyboardButton(
+                        text='Change',
+                        callback_data='change_photo'
+                    )
+                ]]
+            )
+        ),
+        chat_id=message.chat.id
+    )
+
+
+async def change_photo(query: CallbackQuery):
+    global editor
+
+    await editor.edit(
+        message=me.MeMessage(
+            media=me.MePhoto(
+                photo=FSInputFile(path='AAA.png', filename='AAA.png'),
+                has_spoiler=True
+            ),
+            text='Bye bye!',
+            entities=[],
+            parse_mode=None,
+            reply_markup=None
+        ),
+        chat_id=query.message.chat.id,
+        message_id=query.message.message_id
+    )
 
 
 async def message_handler_filter(message: Message):
@@ -634,11 +624,14 @@ async def callback_handler(
     )
 
 
+me.bot = bot
+
 dp.startup.register(startup)
 
 dp.message.register(message_handler, message_handler_filter)
 
 dp.callback_query.register(callback_handler, callback_handler_filter)
+dp.callback_query.register(change_photo, F.data == 'change_photo')
 
 dp.message.register(my_message_handler)
 
