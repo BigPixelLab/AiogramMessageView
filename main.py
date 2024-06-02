@@ -41,18 +41,20 @@ from functools import partial
 from typing import Optional, ClassVar, Callable, Hashable, Union, Literal, Any
 
 from aiogram import Bot, Dispatcher, F
-from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters.callback_data import CallbackData
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, InputFile, FSInputFile, \
-    InputMediaDocument, InputMediaAudio, InputMediaPhoto
+from aiogram.types import Message, CallbackQuery, ReplyParameters
 from pydantic import BaseModel, Field, ConfigDict
 
 import classes.message_editor as me
+from template import render, set_default_syntax
+from template_for_aiogram import aiogram_syntax
 
 TOKEN = '6786053401:AAGO9mhXYedvc_JVmVuTedDOkPm5dMfIoCI'
 
 
 bot = Bot(token=TOKEN)
+me.bot = bot
+
 dp = Dispatcher()
 
 
@@ -112,7 +114,6 @@ class CallableObject:
 
 
 class DatabaseRecord(BaseModel):
-    message_id: Optional[int]
     view_id: str
     data: str
 
@@ -125,22 +126,18 @@ class Database:
     def insert(
             self,
             record_id: uuid.UUID,
-            message_id: int,
             view_id: str,
             data: str
     ):
         self.__database[record_id] = DatabaseRecord(
-            message_id=message_id,
             view_id=view_id,
             data=data
         )
 
         print(self.__database)
 
-    def update(self, record_id: uuid.UUID, data: str, message_id: Union[int, None] = -1):
+    def update(self, record_id: uuid.UUID, data: str):
         record = self.__database[record_id]
-        if message_id != -1:  # So we can actually set message_id to None
-            record.message_id = message_id
         record.data = data
         print(self.__database)
 
@@ -172,6 +169,7 @@ class Database:
 
 
 database = Database()
+set_default_syntax(aiogram_syntax)
 
 
 # ALL THESE CALLBACKS ARE FOR INTERNAL USE ONLY -----
@@ -235,8 +233,8 @@ class MessageView(BaseModel):
     model_config = ConfigDict(extra='forbid')  # Pydantic stuff
 
     record_id: Optional[uuid.UUID] = Field(init_var=False, default=None)
+    message: me.MessageEditor = Field(init_var=False, default=None)
 
-    message_id: Optional[int] = Field(init_var=False, default=None)
     chat_id: Optional[int] = Field(init_var=False, default=None)
     bot_id: Optional[int] = Field(init_var=False, default=None)
 
@@ -246,6 +244,18 @@ class MessageView(BaseModel):
 
     _inline_buttons: ClassVar[dict[str, InlineButtonAction]]
     _text_inputs: ClassVar[list[TextInputAction]]
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        # View can only be restored if it is present in the database,
+        #   and it is present in the database only if record_id is set.
+        #   So on the first initialization record_id will be None, so
+        #   we call __created__ method, then view is sent and if it is
+        #   tracked record_id is set
+        if self.record_id is None:
+            self.message = me.MessageEditor()
+            self.__created__()
 
     def __init_subclass__(cls, alias: str = None, track: bool = None, focus: bool = None, **kwargs):
         global view_table
@@ -290,6 +300,92 @@ class MessageView(BaseModel):
             else _focus
         )
 
+    def __created__(self):
+        """ Overridable. Called first time a view is created (not restored from the database) """
+        pass
+
+    def __render__(self, method: Literal['send', 'edit'] = 'send') -> me.MeMessage:
+        """ Overridable. Called every time a message needs to be rendered """
+        return me.MeMessage(media=None, text='😄', entities=None, parse_mode=None, reply_markup=None)
+
+    async def handle_inline_button(self, action_id: str, kwargs: dict):
+        action = self._inline_buttons[action_id]
+
+        async with KeyLock(self.record_id):
+            await action.call(self, **kwargs)
+            database.update(self.record_id, self.model_dump_json())
+
+    async def handle_text_input(self, kwargs: dict):
+        for action in self._text_inputs:
+            async with KeyLock(self.record_id):
+                await action.call(self, **kwargs)
+                await self.refresh()
+
+        database.update(self.record_id, self.model_dump_json())
+
+    async def send(
+            self,
+            chat_id: Union[int, str],
+            message_thread_id: Optional[int] = None,
+            disable_notification: Optional[bool] = None,
+            protect_content: Optional[bool] = None,
+            reply_parameters: Optional[ReplyParameters] = None
+    ):
+        if self._track_by_default:
+            self.record_id = uuid.uuid4()
+
+        self.bot_id = bot.id
+        self.chat_id = chat_id
+
+        blueprint = self.__render__()
+        await self.message.send(
+            message=blueprint,
+            chat_id=chat_id,
+            message_thread_id=message_thread_id,
+            disable_notification=disable_notification,
+            protect_content=protect_content,
+            reply_parameters=reply_parameters
+        )
+        # message = await bot.send_message(chat_id=chat_id, **config)
+
+        if self._track_by_default:
+            database.insert(
+                self.record_id,
+                self._view_id,
+                self.model_dump_json()
+            )
+
+        if self._focus_by_default:
+            database.set_focus(
+                self.bot_id,
+                self.chat_id,
+                self.record_id
+            )
+
+    async def delete(self):
+        """ Deletes message and stops tracking view """
+        await self.message.delete()
+
+        database.delete(self.record_id)
+        self.record_id = None
+
+    async def refresh(self):
+        blueprint = self.__render__()
+        await self.message.edit(
+            message=blueprint
+        )
+
+    def focus(self):
+        database.set_focus(self.bot_id, self.chat_id, self.record_id)
+
+
+class TemplateMessageView(MessageView):
+    _template: ClassVar[str]
+
+    def __init_subclass__(cls, template: str = None, **kwargs):
+        super().__init_subclass__(**kwargs)
+        cls._template = template
+
     def __get_action_callbacks_tracked(self):
         context = {}
         for action_id in self._inline_buttons:
@@ -305,97 +401,7 @@ class MessageView(BaseModel):
             context[action_id] = SystemActionCallback(action='untracked').pack()
         return context
 
-    def __render__(self, method: Literal['send', 'edit'] = 'send'):
-        return {'text': '😀'}
-
-    async def handle_inline_button(self, action_id: str, kwargs: dict):
-        action = self._inline_buttons[action_id]
-
-        async with KeyLock(self.record_id):
-            await action.call(self, **kwargs)
-            await self.refresh()
-
-            database.update(self.record_id, self.model_dump_json())
-
-    async def handle_text_input(self, kwargs: dict):
-        for action in self._text_inputs:
-            async with KeyLock(self.record_id):
-                await action.call(self, **kwargs)
-                await self.refresh()
-
-        database.update(self.record_id, self.model_dump_json())
-
-    async def send(self, chat_id: int):
-        if self._track_by_default:
-            self.record_id = uuid.uuid4()
-
-        self.bot_id = bot.id
-        self.chat_id = chat_id
-
-        config = self.__render__()
-        message = await bot.send_message(chat_id=chat_id, **config)
-
-        self.message_id = message.message_id
-
-        print(dir(self))
-
-        if self._track_by_default:
-            database.insert(
-                self.record_id,
-                self.message_id,
-                self._view_id,
-                self.model_dump_json()
-            )
-
-        if self._focus_by_default:
-            database.set_focus(
-                self.bot_id,
-                self.chat_id,
-                self.record_id
-            )
-
-    async def delete(self):
-        """ Deletes message and stops tracking view """
-        await bot.delete_message(self.chat_id, self.message_id)
-        self.message_id = None
-        self.chat_id = None
-
-        database.delete(self.record_id)
-        self.record_id = None
-
-    async def detach(self):
-        """ Detaches view from its message.
-            The view can later be sent again or
-            reattached to another message """
-        self.message_id = None
-        self.chat_id = None
-
-        database.update(
-            self.record_id,
-            self.model_dump_json(),
-            message_id=None
-        )
-
-    async def refresh(self):
-        if self.message_id is None or self.chat_id is None:
-            raise  # Cannot refresh a message that is not sent
-
-        config = self.__render__()
-        try:
-            await bot.edit_message_text(
-                chat_id=self.chat_id,
-                message_id=self.message_id,
-                **config
-            )
-        except TelegramBadRequest:
-            pass
-
-    def focus(self):
-        database.set_focus(self.bot_id, self.chat_id, self.record_id)
-
-
-class TemplateMessageView(MessageView):
-    def __context__(self):
+    def __context__(self) -> dict[str, Any]:
         context = self.model_dump()
         context['is_tracked'] = is_tracked = self.record_id is not None
 
@@ -406,8 +412,9 @@ class TemplateMessageView(MessageView):
 
         return context
 
-    def __render__(self, method: Literal['send', 'edit'] = 'send'):
-        pass
+    def __render__(self, method: Literal['send', 'edit'] = 'send') -> me.MeMessage:
+        context = self.__context__()
+        return render(self._template, context, syntax=aiogram_syntax)
 
 
 class MessageViewLazyProxy:
@@ -463,103 +470,21 @@ v = MessageViewLazyProxy
 
 # USAGE EXAMPLE -----
 
+async def start_command_handler(message: Message):
+    await ViewTest().send(message.chat.id)
 
-class MyMessageView(MessageView, BaseModel):
-    pattern: str
-    number: str
 
-    def __render__(self, method: Literal['send', 'edit'] = 'send'):
-        return {
-            'text': self.pattern.format_map(self.model_dump()),
-            'reply_markup': InlineKeyboardMarkup(
-                inline_keyboard=[[
-                    InlineKeyboardButton(
-                        text='-1',
-                        callback_data=InlineButtonCallback(
-                            record_id=self.record_id,
-                            action_id='increase',
-                            action_args='-1'
-                        ).pack()
-                    ),
-                    InlineKeyboardButton(
-                        text='+1',
-                        callback_data=InlineButtonCallback(
-                            record_id=self.record_id,
-                            action_id='increase',
-                            action_args='1'
-                        ).pack()
-                    )
-                ]]
-            )
-        }
+class ViewTest(TemplateMessageView, template='test.xml'):
+    counter: int = 0
 
     @InlineButtonAction()
-    async def increase(self, query: CallbackQuery, args: str):
-        self.number += args
-        await query.answer('Ok!')
-
-    @TextInputAction()
-    async def _(self, message: Message):
-        self.number = message.text
-        await message.delete()
+    async def increase(self, args: str):
+        self.counter += int(args)
+        await self.refresh()
 
 
 async def startup():
-    MyMessageView = v('MyMessageView')
-    print(MyMessageView(pattern='Counter: {number}', number='0'))
-
-
-editor: me.MessageEditor = None
-
-
-async def my_message_handler(message: Message):
-    # view = MyMessageView(pattern='Counter: {number}', number='0')
-    # await view.send(message.chat.id)
-    global editor
-
-    editor = me.MessageEditor()
-    await editor.send(
-        message=me.MeMessage(
-            media=me.MeAudio(
-                audio=FSInputFile(path='BBB.mp3', filename='BBB.mp3'),
-                duration=None,
-                performer='world',
-                title='Hello',
-                thumbnail=None
-            ),
-            text='Hello World!',
-            entities=[],
-            parse_mode=None,
-            reply_markup=InlineKeyboardMarkup(
-                inline_keyboard=[[
-                    InlineKeyboardButton(
-                        text='Change',
-                        callback_data='change_photo'
-                    )
-                ]]
-            )
-        ),
-        chat_id=message.chat.id
-    )
-
-
-async def change_photo(query: CallbackQuery):
-    global editor
-
-    await editor.edit(
-        message=me.MeMessage(
-            media=me.MePhoto(
-                photo=FSInputFile(path='AAA.png', filename='AAA.png'),
-                has_spoiler=True
-            ),
-            text='Bye bye!',
-            entities=[],
-            parse_mode=None,
-            reply_markup=None
-        ),
-        chat_id=query.message.chat.id,
-        message_id=query.message.message_id
-    )
+    pass
 
 
 async def message_handler_filter(message: Message):
@@ -594,7 +519,6 @@ async def callback_handler_filter(query: CallbackQuery):
             args = callback_data.action_args
         except (TypeError, ValueError):
             return False
-        return False
 
     view_id, data = database.get(callback_data.record_id)
     view_cls = view_table[view_id]
@@ -624,15 +548,24 @@ async def callback_handler(
     )
 
 
-me.bot = bot
+"""
+
+class MyComponent(Component):
+    def __created__(self):
+        pass
+        
+    def __before_sending__(self):
+        pass
+
+"""
+
 
 dp.startup.register(startup)
 
 dp.message.register(message_handler, message_handler_filter)
 
 dp.callback_query.register(callback_handler, callback_handler_filter)
-dp.callback_query.register(change_photo, F.data == 'change_photo')
 
-dp.message.register(my_message_handler)
+dp.message.register(start_command_handler, F.text == '/start')
 
 dp.run_polling(bot)

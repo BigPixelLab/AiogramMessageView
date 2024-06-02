@@ -1,0 +1,7 @@
+<message>
+    <p> Counter: {counter} </p>
+
+    <inline-keyboard>
+        <button cd="{increase}:1"> +1 </button>
+    </inline-keyboard>
+</message>

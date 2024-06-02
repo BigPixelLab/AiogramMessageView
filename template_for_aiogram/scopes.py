@@ -3,23 +3,21 @@ from typing import Generator, Union
 from aiogram.types import InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, \
     KeyboardButton
 
+from classes.message_editor import MeMessage, MeMediaType, MeLinkPreview, MePhoto, MeAnimation, MeVideo, MeDocument, \
+    MeAudio
 from template.dev import *
 from .types import *
 
 
-def document_assembler() -> Generator[MessageRenderList, Union[MessageRenderList, MessageRender], None]:
+def document_assembler() -> Generator[MeMessage, MeMessage, None]:
     messages = None
 
     while (token := (yield)) is not StopParsing:
         if messages is not None:
             raise ParsingCoroutineError('Got unexpected second token')
 
-        elif isinstance(token, MessageRenderList):
+        elif isinstance(token, MeMessage):
             messages = token
-            continue
-
-        elif isinstance(token, MessageRender):
-            messages = MessageRenderList([token])
             continue
 
         raise ParsingCoroutineError(f'Got unexpected token "{token}" (type: {token.__class__})')
@@ -34,44 +32,21 @@ DOCUMENT = ParsingScope(document_assembler)
 
 
 # noinspection DuplicatedCode
-def message_assembler() -> Generator[MessageRender,
-                                     Union[ImageID, ImageFile, AnimationID, AnimationFile, Paragraph, Text,
+def message_assembler() -> Generator[MeMessage,
+                                     Union[MeMediaType, Paragraph, Text,
                                            InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove], None]:
-    message = MessageRender("")
+    media = None
+    text = ''
+    reply_markup = None
+
     layout = TextLayout()
 
     while (token := (yield)) is not StopParsing:
 
-        if isinstance(token, ImageID):
-            if message.photo is not None:
-                raise ParsingCoroutineError('Message can only have one photo')
-            if message.animation is not None:
-                raise ParsingCoroutineError('Message can not have both photo and animation')
-            message.photo = token
-            continue
-
-        if isinstance(token, ImageFile):
-            if message.photo is not None:
-                raise ParsingCoroutineError('Message can only have one photo')
-            if message.animation is not None:
-                raise ParsingCoroutineError('Message can not have both photo and animation')
-            message.photo = token.input_file
-            continue
-
-        if isinstance(token, AnimationID):
-            if message.animation is not None:
-                raise ParsingCoroutineError('Message can only have one animation')
-            if message.photo is not None:
-                raise ParsingCoroutineError('Message can not have both photo and animation')
-            message.animation = token
-            continue
-
-        if isinstance(token, AnimationFile):
-            if message.animation is not None:
-                raise ParsingCoroutineError('Message can only have one animation')
-            if message.photo is not None:
-                raise ParsingCoroutineError('Message can not have both photo and animation')
-            message.animation = token.input_file
+        if isinstance(token, (MeLinkPreview, MePhoto, MeAnimation, MeVideo, MeDocument, MeAudio)):
+            if media is not None:
+                raise ParsingCoroutineError('Message cannot have more than one media attached')
+            media = token
             continue
 
         if isinstance(token, Section):
@@ -87,15 +62,21 @@ def message_assembler() -> Generator[MessageRender,
             continue
 
         if isinstance(token, (InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove)):
-            if message.keyboard is not None:
+            if reply_markup is not None:
                 raise ParsingCoroutineError('Message can only have one keyboard')
-            message.keyboard = token
+            reply_markup = token
             continue
 
         raise ParsingCoroutineError(f'Got unexpected token "{token}" (type: {token.__class__})')
 
-    message.text = layout.close()
-    yield message
+    text = layout.close()
+    yield MeMessage(
+        media=media,
+        text=text,
+        entities=None,
+        parse_mode='HTML',
+        reply_markup=reply_markup
+    )
 
 
 MESSAGE = ParsingScope(message_assembler)
@@ -171,7 +152,6 @@ REPLY_KEYBOARD_ROW = ParsingScope(keyboard_row_assembler)
 
 __all__ = (
     'DOCUMENT',
-    'MESSAGES',
     'MESSAGE',
     'ELEMENT',
     'NO_HTML',

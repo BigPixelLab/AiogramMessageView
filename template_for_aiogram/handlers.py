@@ -1,10 +1,10 @@
 import re
-from typing import Union, Any
+from typing import Any
 
-from aiogram.types import InputFile, InlineKeyboardMarkup, WebAppInfo, LoginUrl, CallbackGame, InlineKeyboardButton, \
+from aiogram.types import InlineKeyboardMarkup, WebAppInfo, LoginUrl, CallbackGame, InlineKeyboardButton, \
     ReplyKeyboardMarkup, KeyboardButtonPollType, KeyboardButton
 
-from classes.message_editor import MeLinkPreview, MePhoto
+from classes.message_editor import MeLinkPreview, MePhoto, MeAnimation, MeVideo, MeDocument, MeAudio
 from template.dev import *
 from template_for_aiogram.scopes import *
 from template_for_aiogram.types import *
@@ -530,7 +530,7 @@ def pre(tag: Tag, *, language: str = None) -> Text:
 
 
 @register([MESSAGE], name='link-preview')
-def link_preview(_, *, url: str, size_hint: str = None, position: str = None):
+def link_preview(_, *, url: str, size_hint: str = None, position: str = None) -> MeLinkPreview:
     if size_hint not in ('small', 'large'):
         raise ParsingError(f'link-preview.size_hint expected value "small" or "large", got "{size_hint}"')
 
@@ -540,8 +540,8 @@ def link_preview(_, *, url: str, size_hint: str = None, position: str = None):
     return MeLinkPreview(url=url, size_hint=size_hint, position=position)
 
 
-@register([MESSAGE], name=['photo', 'img'])
-def photo(_, *, src: str, has_spoiler: bool = False) -> Union[ImageID, ImageFile]:
+@register([MESSAGE], name=['photo', 'img', 'image'])
+def photo(_, *, src: str, has_spoiler: bool = None) -> MePhoto:
     """
         Изображение.
 
@@ -552,7 +552,7 @@ def photo(_, *, src: str, has_spoiler: bool = False) -> Union[ImageID, ImageFile
 
         Аргументы::
 
-            <photo src: (str|InputFile)/>
+            <photo src: (str|InputFile)[ has_spoiler: bool]/>
             src - InputFile, File-ID или uri-изображения.
 
     """
@@ -561,7 +561,8 @@ def photo(_, *, src: str, has_spoiler: bool = False) -> Union[ImageID, ImageFile
 
 
 @register([MESSAGE])
-def anim(_, *, src: str) -> Union[AnimationID, AnimationFile]:
+def animation(_, *, src: str, duration: int = None, width: int = None, height: int = None, thumbnail: str = None,
+              has_spoiler: bool = None) -> MeAnimation:
     """
         Анимация.
 
@@ -572,18 +573,58 @@ def anim(_, *, src: str) -> Union[AnimationID, AnimationFile]:
 
         Аргументы::
 
-            <anim src: (str|InputFile)/>
+            <anim src: (str|InputFile)[ duration: int][ width: int][ height: int][ thumbnail: InputFile]
+                [ has_spoiler: bool]/>
             src - InputFile, File-ID или uri-анимации.
 
     """
     # InputFile can be provided via context vars
-    if isinstance(src, InputFile):
-        return AnimationFile(src)
+    return MeAnimation(
+        animation=src,
+        duration=duration,
+        width=width,
+        height=height,
+        thumbnail=thumbnail,
+        has_spoiler=has_spoiler
+    )
 
-    if isinstance(src, str):
-        return AnimationID(src)
 
-    raise ParsingError(f'anim.src expected "str" or "InputFile", got "{type(src)}"')
+@register([MESSAGE])
+def video(_, *, src: str, duration: int = None, width: int = None, height: int = None, thumbnail: str = None,
+          has_spoiler: bool = None, supports_streaming: bool = None) -> MeVideo:
+    # InputFile can be provided via context vars
+    return MeVideo(
+        video=src,
+        duration=duration,
+        width=width,
+        height=height,
+        thumbnail=thumbnail,
+        has_spoiler=has_spoiler,
+        supports_streaming=supports_streaming
+    )
+
+
+@register([MESSAGE])
+def document(_, *, src: str, thumbnail: str = None, disable_content_type_detection: bool = None) -> MeDocument:
+    # InputFile can be provided via context vars
+    return MeDocument(
+        document=src,
+        thumbnail=thumbnail,
+        disable_content_type_detection=disable_content_type_detection
+    )
+
+
+@register([MESSAGE])
+def audio(_, *, src: str, duration: int = None, performer: str = None, title: str = None,
+          thumbnail: str = None) -> MeAudio:
+    # InputFile can be provided via context vars
+    return MeAudio(
+        audio=src,
+        duration=duration,
+        performer=performer,
+        title=title,
+        thumbnail=thumbnail
+    )
 
 
 @register([MESSAGE], name='inline-keyboard')

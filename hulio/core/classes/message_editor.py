@@ -1,12 +1,8 @@
 from typing import Optional, Literal, Union, Protocol, Any
 
+import aiogram.types as tg
 from aiogram import Bot
-from aiogram.types import InputFile, MessageEntity, InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove, \
-    ForceReply, ReplyParameters, LinkPreviewOptions, Message, InputMediaPhoto, InputMediaAnimation, InputMediaVideo, \
-    InputMediaDocument, InputMediaAudio
 from pydantic import BaseModel, ConfigDict, Field
-
-bot: Bot = ...
 
 
 # noinspection PyPropertyDefinition
@@ -20,7 +16,7 @@ class IMediaType(Protocol):
         ...
 
 
-class MeLinkPreview(BaseModel):
+class LinkPreview(BaseModel):
     url: str
     size_hint: Optional[Literal['small', 'large']]
     position: Optional[Literal['above', 'below']]
@@ -36,8 +32,8 @@ class MeLinkPreview(BaseModel):
         return 'lp'
 
 
-class MePhoto(BaseModel):
-    photo: Union[InputFile, str]
+class Photo(BaseModel):
+    photo: Union[tg.InputFile, str]
     has_spoiler: Optional[bool]
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -51,12 +47,12 @@ class MePhoto(BaseModel):
         return 'p'
 
 
-class MeAnimation(BaseModel):
-    animation: Union[InputFile, str]
+class Animation(BaseModel):
+    animation: Union[tg.InputFile, str]
     duration: Optional[int]
     width: Optional[int]
     height: Optional[int]
-    thumbnail: Optional[InputFile]
+    thumbnail: Optional[tg.InputFile]
     has_spoiler: Optional[bool]
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -70,12 +66,12 @@ class MeAnimation(BaseModel):
         return 'a'
 
 
-class MeVideo(BaseModel):
-    video: Union[InputFile, str]
+class Video(BaseModel):
+    video: Union[tg.InputFile, str]
     duration: Optional[int]
     width: Optional[int]
     height: Optional[int]
-    thumbnail: Optional[InputFile]
+    thumbnail: Optional[tg.InputFile]
     has_spoiler: Optional[bool]
     supports_streaming: Optional[bool]
 
@@ -90,9 +86,9 @@ class MeVideo(BaseModel):
         return 'v'
 
 
-class MeDocument(BaseModel):
-    document: Union[InputFile, str]
-    thumbnail: Optional[InputFile]
+class Document(BaseModel):
+    document: Union[tg.InputFile, str]
+    thumbnail: Optional[tg.InputFile]
     disable_content_type_detection: Optional[bool]
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -106,12 +102,12 @@ class MeDocument(BaseModel):
         return 'd'
 
 
-class MeAudio(BaseModel):
-    audio: Union[InputFile, str]
+class Audio(BaseModel):
+    audio: Union[tg.InputFile, str]
     duration: Optional[int]
     performer: Optional[str]
     title: Optional[str]
-    thumbnail: Optional[InputFile]
+    thumbnail: Optional[tg.InputFile]
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -124,20 +120,25 @@ class MeAudio(BaseModel):
         return 'au'
 
 
-MeMediaType = Union[MeLinkPreview, MePhoto, MeAnimation, MeVideo, MeDocument, MeAudio]
+MediaType = Union[LinkPreview, Photo, Animation, Video, Document, Audio]
 
 
-class MeMessage(BaseModel):
-    media: Optional[MeMediaType]
+class Message(BaseModel):
+    media: Optional[MediaType]
     text: str
-    entities: Optional[list[MessageEntity]]
+    entities: Optional[list[tg.MessageEntity]]
     parse_mode: Optional[str]
-    reply_markup: Optional[Union[InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove, ForceReply]]
+    reply_markup: Optional[Union[
+        tg.InlineKeyboardMarkup,
+        tg.ReplyKeyboardMarkup,
+        tg.ReplyKeyboardRemove,
+        tg.ForceReply
+    ]]
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
-class MessageEditor(BaseModel):
+class MessageManager(BaseModel):
     """
     Класс для упрощённой отправки и редактирования сообщений.
     Сохраняет необходимую дальнейшего редактирования информацию при отправке.
@@ -163,8 +164,8 @@ class MessageEditor(BaseModel):
     chat_id: Optional[Union[int, str]] = Field(init_var=False, default=None)
     message_id: Optional[int] = Field(init_var=False, default=None)
 
-    def _set_media_id(self, media: Union[InputFile, str]) -> None:
-        if isinstance(media, InputFile):
+    def _set_media_id(self, media: Union[tg.InputFile, str]) -> None:
+        if isinstance(media, tg.InputFile):
             self.media_id = media.filename
             self.is_input_file = True
         elif isinstance(media, str):
@@ -177,7 +178,7 @@ class MessageEditor(BaseModel):
         if self.media_type != media.media_type:
             return True
 
-        is_input_file = isinstance(media.media, InputFile)
+        is_input_file = isinstance(media.media, tg.InputFile)
 
         if is_input_file != self.is_input_file:
             return True
@@ -189,13 +190,14 @@ class MessageEditor(BaseModel):
 
     async def send(
             self,
-            message: MeMessage,
+            bot: Bot,
+            message: Message,
             chat_id: Union[int, str],
             message_thread_id: Optional[int] = None,
             disable_notification: Optional[bool] = None,
             protect_content: Optional[bool] = None,
-            reply_parameters: Optional[ReplyParameters] = None
-    ) -> Message:
+            reply_parameters: Optional[tg.ReplyParameters] = None
+    ) -> tg.Message:
         parameters = {
             'chat_id': chat_id,
             'message_thread_id': message_thread_id,
@@ -208,7 +210,7 @@ class MessageEditor(BaseModel):
             self.media_type = 'nm'
 
             telegram_message = await bot.send_message(
-                link_preview_options=LinkPreviewOptions(
+                link_preview_options=tg.LinkPreviewOptions(
                     is_disabled=True
                 ),
 
@@ -219,12 +221,12 @@ class MessageEditor(BaseModel):
                 **parameters
             )
 
-        elif isinstance(message.media, MeLinkPreview):
+        elif isinstance(message.media, LinkPreview):
             self.media_type = 'lp'
 
             # noinspection DuplicatedCode
             telegram_message = await bot.send_message(
-                link_preview_options=LinkPreviewOptions(
+                link_preview_options=tg.LinkPreviewOptions(
                     is_disabled=False,
                     url=message.media.url,
                     prefer_small_media=(
@@ -248,7 +250,7 @@ class MessageEditor(BaseModel):
                 **parameters
             )
 
-        elif isinstance(message.media, MePhoto):
+        elif isinstance(message.media, Photo):
             self.media_type = 'p'
             self._set_media_id(message.media.photo)
 
@@ -263,7 +265,7 @@ class MessageEditor(BaseModel):
                 **parameters
             )
 
-        elif isinstance(message.media, MeAnimation):
+        elif isinstance(message.media, Animation):
             self.media_type = 'a'
             self._set_media_id(message.media.animation)
 
@@ -282,7 +284,7 @@ class MessageEditor(BaseModel):
                 **parameters
             )
 
-        elif isinstance(message.media, MeVideo):
+        elif isinstance(message.media, Video):
             self.media_type = 'v'
             self._set_media_id(message.media.video)
 
@@ -302,7 +304,7 @@ class MessageEditor(BaseModel):
                 **parameters
             )
 
-        elif isinstance(message.media, MeDocument):
+        elif isinstance(message.media, Document):
             self.media_type = 'd'
             self._set_media_id(message.media.document)
 
@@ -318,7 +320,7 @@ class MessageEditor(BaseModel):
                 **parameters
             )
 
-        elif isinstance(message.media, MeAudio):
+        elif isinstance(message.media, Audio):
             self.media_type = 'au'
             self._set_media_id(message.media.audio)
 
@@ -346,9 +348,10 @@ class MessageEditor(BaseModel):
 
     async def edit(
             self,
-            message: MeMessage,
+            bot: Bot,
+            message: Message,
             force_edit_media: bool = False
-    ) -> Union[Message, bool]:
+    ) -> Union[tg.Message, bool]:
         parameters = {
             'chat_id': self.chat_id,
             'message_id': self.message_id,
@@ -356,10 +359,10 @@ class MessageEditor(BaseModel):
         }
 
         if self.media_type in ('nm', 'lp') and message.media is None:
-            self.media_type = 'nm'
+            self.media_type = 'nm'  # TODO: This things should go after edit or send, so in case fo an error MessageEditor would be clear
 
             return await bot.edit_message_text(
-                link_preview_options=LinkPreviewOptions(
+                link_preview_options=tg.LinkPreviewOptions(
                     is_disabled=False
                 ),
 
@@ -370,12 +373,12 @@ class MessageEditor(BaseModel):
                 **parameters
             )
 
-        if self.media_type in ('nm', 'lp') and isinstance(message.media, MeLinkPreview):
+        if self.media_type in ('nm', 'lp') and isinstance(message.media, LinkPreview):
             self.media_type = 'lp'
 
             # noinspection DuplicatedCode
             return await bot.edit_message_text(
-                link_preview_options=LinkPreviewOptions(
+                link_preview_options=tg.LinkPreviewOptions(
                     is_disabled=False,
                     url=message.media.url,
                     prefer_small_media=(
@@ -421,11 +424,12 @@ class MessageEditor(BaseModel):
                 **parameters
             )
 
-        if isinstance(message.media, MePhoto):
+        if isinstance(message.media, Photo):
             self.media_type = 'p'
+            self._set_media_id(message.media.photo)
 
             return await bot.edit_message_media(
-                media=InputMediaPhoto(
+                media=tg.InputMediaPhoto(
                     media=message.media.photo,
                     has_spoiler=message.media.has_spoiler,
                     caption=message.text,
@@ -436,11 +440,12 @@ class MessageEditor(BaseModel):
                 **parameters
             )
 
-        if isinstance(message.media, MeAnimation):
+        if isinstance(message.media, Animation):
             self.media_type = 'a'
+            self._set_media_id(message.media.animation)
 
             return await bot.edit_message_media(
-                media=InputMediaAnimation(
+                media=tg.InputMediaAnimation(
                     media=message.media.animation,
                     thumbnail=message.media.thumbnail,
                     width=message.media.width,
@@ -455,11 +460,12 @@ class MessageEditor(BaseModel):
                 **parameters
             )
 
-        if isinstance(message.media, MeVideo):
+        if isinstance(message.media, Video):
             self.media_type = 'v'
+            self._set_media_id(message.media.video)
 
             return await bot.edit_message_media(
-                media=InputMediaVideo(
+                media=tg.InputMediaVideo(
                     media=message.media.video,
                     thumbnail=message.media.thumbnail,
                     width=message.media.width,
@@ -475,11 +481,12 @@ class MessageEditor(BaseModel):
                 **parameters
             )
 
-        if isinstance(message.media, MeDocument):
+        if isinstance(message.media, Document):
             self.media_type = 'd'
+            self._set_media_id(message.media.document)
 
             return await bot.edit_message_media(
-                media=InputMediaDocument(
+                media=tg.InputMediaDocument(
                     media=message.media.document,
                     thumbnail=message.media.thumbnail,
                     disable_content_type_detection=message.media.disable_content_type_detection,
@@ -491,11 +498,12 @@ class MessageEditor(BaseModel):
                 **parameters
             )
 
-        if isinstance(message.media, MeAudio):
+        if isinstance(message.media, Audio):
             self.media_type = 'au'
+            self._set_media_id(message.media.audio)
 
             return await bot.edit_message_media(
-                media=InputMediaAudio(
+                media=tg.InputMediaAudio(
                     media=message.media.audio,
                     thumbnail=message.media.thumbnail,
                     duration=message.media.duration,
@@ -511,9 +519,21 @@ class MessageEditor(BaseModel):
 
         raise NotImplementedError('Unknown media type')
 
-    async def delete(self):
+    async def delete(self, bot: Bot):
         if await bot.delete_message(self.chat_id, self.message_id):
-            self.chat_id = None
-            self.message_id = None
+            self.__init__()
             return True
         return False
+
+
+__all__ = (
+    'IMediaType',
+    'LinkPreview',
+    'Photo',
+    'Animation',
+    'Video',
+    'Document',
+    'Audio',
+    'Message',
+    'MessageManager'
+)

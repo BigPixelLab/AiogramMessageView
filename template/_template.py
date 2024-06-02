@@ -87,7 +87,7 @@ def str2bool(value: str) -> bool:
         raise ConvertingError(f'Unable to convert "{value}" to bool, try using "True" or "False"')
 
 
-def str2list(item_conv, sep=', ') -> Union[Callable[[str], list], list]:
+def str2list(item_conv, sep=',') -> Union[Callable[[str], list], list]:
     """ Возвращает converter, преобразующий строку в список. Или, если передана
         строка - преобразует её в список """
 
