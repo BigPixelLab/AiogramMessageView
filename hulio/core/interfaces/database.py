@@ -75,10 +75,10 @@ class IDatabaseProvider(t.Protocol):
     def select(self, schema_name: str, table_name: str, columns: list[str], where: dict[str, t.Any], last_added: bool = False) -> list[list[t.Any]]:
         raise NotImplementedError
 
-    def exists(self, schema_name: str, table_name: str, columns: list[str], where: dict[str, t.Any]) -> bool:
+    def exists(self, schema_name: str, table_name: str, where: dict[str, t.Any]) -> bool:
         raise NotImplementedError
 
-    def update(self, schema_name: str, table_name: str, values: dict[str, t.Any], where: dict[str, t.Any]):
+    def update(self, schema_name: str, table_name: str, values: dict[str, t.Any], record_id: uuid.UUID):
         raise NotImplementedError
 
     def delete(self, schema_name: str, table_name: str, record_id: uuid.UUID):
