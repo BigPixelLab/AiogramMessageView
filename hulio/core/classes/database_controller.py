@@ -4,6 +4,9 @@ from hulio.core.interfaces.database import IDatabaseController, IDatabaseProvide
 
 
 class DatabaseController(IDatabaseController):
+    def __init__(self, provider: IDatabaseProvider):
+        pass
+
     def setup(self, provider: IDatabaseProvider):
         raise NotImplementedError
 

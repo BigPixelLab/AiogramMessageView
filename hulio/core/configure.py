@@ -5,18 +5,19 @@ import aiogram
 from hulio.core import glob
 from hulio.core.attribute import get_attribute
 from hulio.core.classes.component_registry import ComponentRegistry
+from hulio.core.classes.database_controller import DatabaseController
 from hulio.core.decorators import TextInfo, ButtonInfo
 from hulio.core.filters.is_component_button import is_component_button
 from hulio.core.filters.is_component_focused import is_component_focused
 from hulio.core.handlers.component_handler_decorator import component_handler_decorator
-from hulio.core.interfaces.database import IDatabaseController
+from hulio.core.interfaces.database import IDatabaseController, IDatabaseProvider
 
 if t.TYPE_CHECKING:
     from hulio.core.classes.component import Component
 
 
 def _register_components_handlers(
-        component: Component,
+        component: type[Component],
         router: aiogram.Router,
         storage: IDatabaseController,
         registry: ComponentRegistry,
@@ -63,8 +64,8 @@ def configure(
         aiogram_callback_separator: str = None,  # ':' by default
         aiogram_bots: t.Iterable[aiogram.Bot],
         aiogram_router: aiogram.Router,
-        storage: IDatabaseController = None,
-        components: t.Iterable[Component]
+        storage_provider: IDatabaseProvider = None,
+        components: t.Iterable[type[Component]]
 ):
 
     # Filling up bot map
@@ -73,7 +74,7 @@ def configure(
         glob.bot_map[bot.id] = bot
 
     # Setting up storage
-    glob.storage = storage
+    glob.storage = DatabaseController(storage_provider)
 
     # Setting up components
     for component in components:

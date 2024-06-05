@@ -1,7 +1,12 @@
-from aiogram import Bot, Dispatcher, Router
+from aiogram import Bot, Dispatcher
+from aiogram.filters import CommandStart
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import Message
 
-import hulio.core.configure
+from hulio.core.classes.component import Component
+from hulio.core.configure import configure
+from hulio.core.decorators import button
+from hulio.core.providers.memory import MemoryStorageProvider
 
 TOKEN = '6786053401:AAGO9mhXYedvc_JVmVuTedDOkPm5dMfIoCI'
 
@@ -9,24 +14,24 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
 
-class CounterComponent(hulio.TemplateComponent, template='...'):
+class CounterComponent(Component, template='test.xml'):
     counter: int
 
-    @hulio.button
+    @button
     def add(self):
         self.counter += 1
         self.refresh()
 
 
 @dp.message(CommandStart(deep_link=False))
-async def command_start(message: Message, command: CommandObject):
+async def command_start(message: Message):
     await CounterComponent(counter=0).send(message.chat.id)
 
 
-hulio.configure(
+configure(
     aiogram_bots=[bot],  # Для работы hulio нужно иметь список всех ботов, через которые могут отправляться компоненты
     aiogram_router=dp,  # Роутер в котором будут регистрироваться обработчики
-    storage=MemoryStorage(),
+    storage_provider=MemoryStorageProvider(),
     components=[
         CounterComponent
     ]

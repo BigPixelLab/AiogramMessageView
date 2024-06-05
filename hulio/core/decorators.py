@@ -7,18 +7,18 @@ from .attribute import set_attribute
 from .classes.component import Component
 
 
-class ContextInfo(BaseModel):
+class ContextPropertyInfo(BaseModel):
     alias: str
 
 
-def context(f, *, alias: str = None):
+def context_property(f, *, alias: str = None):
     """ Decorated method will become a property and will be included
         in a context on render """
 
     def decorate(fn):
         prop = property(fn)
 
-        set_attribute(prop, 'action', ContextInfo(
+        set_attribute(prop, 'action', ContextPropertyInfo(
             alias=(
                 alias if alias is not None
                 else inspect.unwrap(fn).__name__

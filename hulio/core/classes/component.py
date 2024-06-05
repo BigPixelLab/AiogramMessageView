@@ -2,14 +2,15 @@ import typing as t
 import uuid
 
 from aiogram.exceptions import TelegramAPIError
-from aiogram.types import ReplyParameters
+from aiogram.types import ReplyParameters, Chat
 from pydantic import BaseModel, Field
 
-from hulio.core.contexts import current_component
+from hulio.core.contexts import current_component, current_chat
 
 
 class Component(BaseModel):
     _component_id: str
+    _template: str
 
     record_id: t.Optional[uuid.UUID] = Field(init_var=False, default=None)
     parent_record_id: t.Optional[uuid.UUID] = Field(init_var=False, default=None)
@@ -24,8 +25,13 @@ class Component(BaseModel):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-    def __init_subclass__(cls, **kwargs):
-        pass
+    def __init_subclass__(cls, component_id: str = None, template: str = None, **kwargs):
+        if component_id is None:
+            component_id = cls.__name__
+        cls._component_id = component_id
+
+        if template is None:
+            raise ValueError('Шаблон должен быть указан при наследовании от Component.')
 
     @property
     def is_tracked(self):
@@ -34,7 +40,7 @@ class Component(BaseModel):
     async def send(
             self,
 
-            chat_id: t.Union[int, str],
+            chat_id: t.Union[int, str] = None,
             message_thread_id: int = None,
             disable_notification: bool = None,
             protect_content: bool = None,
@@ -43,6 +49,14 @@ class Component(BaseModel):
             detached: bool = False,  # If true, current message keeps being tracked and enabled
             child: bool = False  # New message when closed will be able to return info to this one
     ):
+
+        if chat_id is None:
+            _chat: Chat = current_chat.get()
+            chat_id = _chat.id
+
+        if chat_id is None:
+            raise ValueError('Аргумент chat_id должен быть указан при вызове .send() вне обработчика компонента.')
+
         # Проверяем, не было ли уже отправлено сообщение. Компонент имеет строгую
         # привязку к сообщению, поэтому, если сообщения нет, то нет и компонента
         # в базе
