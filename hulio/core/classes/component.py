@@ -78,13 +78,8 @@ class Component(BaseModel):
         if child and caller is None:
             raise RuntimeError('Component can be set as child only from another components handler')
 
-        _parent = None
-
-        if child:
-            _parent = caller
-
-            if not detached:
-                await caller.__disable()
+        if child and not detached:
+            await caller.__disable()
 
         if not child and not detached and caller is not None:
             # If called from aiogram handler, then there is no component to untrack

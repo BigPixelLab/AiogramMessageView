@@ -34,7 +34,7 @@ class MessageRecord(BaseModel):
 
 
 class IDatabaseController(t.Protocol):
-    def setup(self, provider: 'IDatabaseProvider'):
+    def setup(self):
         raise NotImplementedError
 
     def component_track(self, record: ComponentRecord):
@@ -72,7 +72,10 @@ class IDatabaseProvider(t.Protocol):
     def insert(self, schema_name: str, table_name: str, record_id: uuid.UUID, values: dict[str, t.Any]):
         raise NotImplementedError
 
-    def select(self, schema_name: str, table_name: str, columns: list[str], where: dict[str, t.Any], last_added: bool = False) -> list[list[t.Any]]:
+    def select(self, schema_name: str, table_name: str, columns: list[str] = None, where: dict[str, t.Any] = None, last_inserted: bool = False) -> list[list[t.Any]]:
+        raise NotImplementedError
+
+    def get(self, schema_name: str, table_name: str, record_id: uuid.UUID, columns: list[str] = None) -> t.Optional[list[t.Any]]:
         raise NotImplementedError
 
     def exists(self, schema_name: str, table_name: str, where: dict[str, t.Any]) -> bool:

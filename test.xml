@@ -2,6 +2,8 @@
     <p> Counter: {counter} </p>
 
     <inline-keyboard>
-        <button cd="{add}:1"> +1 </button>
+        <button cd="{add}"> +1 </button>
     </inline-keyboard>
 </message>
+
+

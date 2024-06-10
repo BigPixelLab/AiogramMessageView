@@ -59,8 +59,10 @@ class MemoryStorageProvider(IDatabaseProvider):
             for col in columns
         ]
 
-    def get(self, schema_name: str, table_name: str, columns: list[str], record_id: uuid.UUID) -> t.Optional[TRow]:
+    def get(self, schema_name: str, table_name: str, record_id: uuid.UUID, columns: list[str] = None) -> t.Optional[TRow]:
         table, table_columns = self._database[schema_name][table_name]
+        if columns is None:
+            columns = table_columns
         try:
             row = table[record_id]
         except KeyError:
